@@ -66,10 +66,38 @@ sys.path.insert(0, os.path.join(script_dir, 'xalpha'))
 
 # ==================== 全局配置 ====================
 # 设置字体以支持中文显示
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'DejaVu Sans']
+# 自动检测系统中可用的中文字体，支持 Windows/Linux/macOS
+import matplotlib.font_manager as fm
+
+# 查找系统中所有支持中文的字体
+_chinese_fonts = []
+for f in fm.findSystemFonts():
+    try:
+        fp = fm.FontProperties(fname=f)
+        name = fp.get_name()
+        # 常见中文字体名称关键词
+        if any(kw in name.lower() for kw in ['yahei', 'simhei', 'simsun', 'wqy', 'wenquanyi', 
+                                               'noto', 'droid', 'source han', 'fang', 'kai',
+                                               'microsoft', 'pingfang', 'heiti', 'songti']):
+            _chinese_fonts.append(name)
+    except:
+        pass
+
+# 去重并保持顺序
+_chinese_fonts = list(dict.fromkeys(_chinese_fonts))
+
+# 构建字体回退列表：中文字体优先，最后回退到 DejaVu Sans
+_font_list = _chinese_fonts + ['WenQuanYi Micro Hei', 'WenQuanYi Zen Hei',
+                                'Noto Sans CJK SC', 'Noto Sans SC',
+                                'Microsoft YaHei', 'SimHei', 'DejaVu Sans']
+plt.rcParams['font.sans-serif'] = _font_list
 plt.rcParams['axes.unicode_minus'] = False  # 正确显示负号
 plt.rcParams['savefig.dpi'] = 150          # 保存图片的DPI
 plt.rcParams['figure.dpi'] = 100           # 显示图片的DPI
+
+# 清除字体缓存（在 GitHub Action 环境中需要）
+fm._load_fontmanager(try_read_cache=False)
+
 
 
 def get_fund_data(fund_code, start_date=None):
