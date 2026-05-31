@@ -153,7 +153,7 @@ def send_email(to_addr: str, subject: str, body_text: str,
 
 def main():
     parser = argparse.ArgumentParser(description='发送基金分析报告邮件')
-    parser.add_argument('--to', default=os.environ.get('MAIL_TO'),
+    parser.add_argument('--to', default=None,
                         help='收件人邮箱地址（也可通过 MAIL_TO 环境变量设置）')
     parser.add_argument('--body-file', default='宽基指数分析结果.txt',
                         help='邮件正文文本文件路径')
@@ -166,12 +166,13 @@ def main():
     
     args = parser.parse_args()
     
-    # 检查收件人
-    to_addr = args.to
+    # 检查收件人：优先使用 --to 参数，其次环境变量
+    to_addr = args.to or os.environ.get('MAIL_TO')
     if not to_addr:
         print("错误: 未指定收件人邮箱")
         print("请使用 --to 参数或设置 MAIL_TO 环境变量")
         sys.exit(1)
+
     
     output_dir = args.output_dir
     
