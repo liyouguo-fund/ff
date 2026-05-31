@@ -81,6 +81,8 @@ jobs:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_SMTP_SERVER: ${{ secrets.MAIL_SMTP_SERVER }}
+          MAIL_SMTP_PORT: ${{ secrets.MAIL_SMTP_PORT }}
         run: |
           # 查找最新生成的趋势图目录
           IMAGES_DIR=$(ls -d 基金趋势图_* 2>/dev/null | sort -r | head -1 || echo "")
@@ -99,6 +101,7 @@ jobs:
               --body-file "宽基指数分析结果.txt" \
               --attach-excel "基金趋势分析.xlsx"
           fi
+
       
       # 9. 将生成的文件推送到仓库
       - name: 推送分析结果到仓库

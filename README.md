@@ -31,14 +31,17 @@ git push -u origin main
 
 在 GitHub 仓库页面：**Settings → Secrets and variables → Actions → New repository secret**
 
-需要添加以下 4 个 Secrets：
+需要添加以下 Secrets：
 
 | Secret 名称 | 必填 | 说明 | 示例值 |
 |------------|------|------|--------|
-| `MAIL_USERNAME` | ✅ | QQ邮箱地址 | `123456789@qq.com` |
-| `MAIL_PASSWORD` | ✅ | QQ邮箱SMTP授权码 | `xxxxxxxxxxxxxx` |
+| `MAIL_USERNAME` | ✅ | 邮箱地址 | `123456789@qq.com` |
+| `MAIL_PASSWORD` | ✅ | 邮箱SMTP授权码 | `xxxxxxxxxxxxxx` |
 | `MAIL_TO` | ✅ | 收件人邮箱地址 | `your-email@qq.com` |
+| `MAIL_SMTP_SERVER` | ❌ | SMTP服务器地址（默认 `smtp.qq.com`） | `smtp.qq.com` |
+| `MAIL_SMTP_PORT` | ❌ | SMTP服务器端口（默认 `465`） | `465` |
 | `WENCAI_QUERY` | ❌ | 问财查询语句（不填则使用默认值） | `近一年涨幅前10名，C类基金` |
+
 
 > **如何获取 QQ邮箱 SMTP 授权码？**
 > 1. 登录 QQ邮箱 → 设置 → 账户

@@ -4,7 +4,7 @@
 功能：
 1. 读取"宽基指数趋势大模型_EMA.py"生成的文本文件作为邮件正文
 2. 将"基金趋势大模型_WMA.py"生成的 Excel 文件和图片打包成 zip 作为附件
-3. 通过 QQ邮箱 SMTP 发送邮件
+3. 通过 SMTP 发送邮件（默认 QQ邮箱）
 
 使用方式：
     python send_email.py --to recipient@qq.com \\
@@ -13,10 +13,13 @@
         --attach-images-dir 基金趋势图_20250101
 
 环境变量（GitHub Secrets）：
-    MAIL_USERNAME: QQ邮箱地址
-    MAIL_PASSWORD: QQ邮箱SMTP授权码
-    MAIL_TO: 收件人邮箱地址
+    MAIL_USERNAME:   邮箱地址（必填）
+    MAIL_PASSWORD:   邮箱SMTP授权码（必填）
+    MAIL_TO:         收件人邮箱地址（必填）
+    MAIL_SMTP_SERVER: SMTP服务器地址（可选，默认 smtp.qq.com）
+    MAIL_SMTP_PORT:   SMTP服务器端口（可选，默认 465）
 """
+
 
 import smtplib
 import os
@@ -58,8 +61,8 @@ def create_zip_attachment(file_paths: list, zip_name: str = "附件.zip") -> str
 
 def send_email(to_addr: str, subject: str, body_text: str, 
                attachment_paths: list = None,
-               smtp_server: str = "smtp.qq.com", 
-               smtp_port: int = 465):
+               smtp_server: str = None, 
+               smtp_port: int = None):
     """
     发送邮件
     
@@ -68,12 +71,19 @@ def send_email(to_addr: str, subject: str, body_text: str,
         subject: 邮件主题
         body_text: 邮件正文（纯文本）
         attachment_paths: 附件文件路径列表
-        smtp_server: SMTP服务器地址
-        smtp_port: SMTP服务器端口（QQ邮箱SSL端口465）
+        smtp_server: SMTP服务器地址（默认从环境变量 MAIL_SMTP_SERVER 读取，否则使用 smtp.qq.com）
+        smtp_port: SMTP服务器端口（默认从环境变量 MAIL_SMTP_PORT 读取，否则使用 465）
     """
     # 从环境变量获取邮箱配置
     from_addr = os.environ.get('MAIL_USERNAME')
     password = os.environ.get('MAIL_PASSWORD')
+    
+    # SMTP 服务器配置：参数 > 环境变量 > 默认值
+    if smtp_server is None:
+        smtp_server = os.environ.get('MAIL_SMTP_SERVER', 'smtp.qq.com')
+    if smtp_port is None:
+        smtp_port = int(os.environ.get('MAIL_SMTP_PORT', '465'))
+
     
     if not from_addr or not password:
         print("错误: 未设置 MAIL_USERNAME 或 MAIL_PASSWORD 环境变量")
