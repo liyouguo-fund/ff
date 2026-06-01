@@ -72,15 +72,17 @@ jobs:
           echo "=== 基金趋势图目录 ==="
           ls -d 基金趋势图_* 2>/dev/null && ls 基金趋势图_*/ 2>/dev/null || echo "（无趋势图目录）"
       
-      # 8. 上传趋势图到 Artifact（只包含生成的图片，不含代码文件）
-      - name: 上传趋势图到 Artifact
+      # 8. 上传生成的文件到 Artifact（只含项目产生的材料，不含代码文件）
+      - name: 上传生成的文件到 Artifact
         id: upload_artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 基金趋势图_${{ github.run_id }}
+          name: 基金分析报告_${{ github.run_id }}
           path: |
             基金趋势图_*/*.png
+            基金趋势分析.xlsx
           retention-days: 7
+
 
       
       # 9. 发送邮件（正文 + Excel附件 + 趋势图下载链接）
