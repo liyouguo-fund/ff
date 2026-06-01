@@ -74,7 +74,17 @@ jobs:
           echo "=== 基金趋势图目录 ==="
           ls -d 基金趋势图_* 2>/dev/null && ls 基金趋势图_*/ 2>/dev/null || echo "（无趋势图目录）"
       
-      # 8. 打包趋势图并上传到 GitHub Release（生成公开下载链接）
+      # 8. 上传趋势图到 Artifact（备用下载方式）
+      - name: 上传趋势图到 Artifact
+        id: upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 基金趋势图_${{ github.run_id }}
+          path: |
+            基金趋势图_*/
+          retention-days: 7
+      
+      # 9. 打包趋势图并上传到 GitHub Release（生成公开下载链接，无需登录）
       - name: 打包趋势图并创建 Release
         id: create_release
         run: |
@@ -102,18 +112,22 @@ jobs:
               --notes "基金趋势分析图表 - ${TODAY}" \
               "$ZIP_NAME"
             
-            # 获取公开下载 URL
-            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
-            echo "DOWNLOAD_URL=${DOWNLOAD_URL}" >> $GITHUB_OUTPUT
-            echo "公开下载链接: ${DOWNLOAD_URL}"
+            # 获取公开下载 URL（Release 页面）
+            RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
+            # 获取直接下载 URL（无需登录）
+            DIRECT_URL="https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/${ZIP_NAME}"
+            echo "RELEASE_URL=${RELEASE_URL}" >> $GITHUB_OUTPUT
+            echo "DIRECT_URL=${DIRECT_URL}" >> $GITHUB_OUTPUT
+            echo "公开下载链接: ${DIRECT_URL}"
           else
             echo "未找到趋势图目录，跳过 Release"
-            echo "DOWNLOAD_URL=" >> $GITHUB_OUTPUT
+            echo "RELEASE_URL=" >> $GITHUB_OUTPUT
+            echo "DIRECT_URL=" >> $GITHUB_OUTPUT
           fi
         env:
           GH_TOKEN: ${{ github.token }}
       
-      # 9. 发送邮件（正文 + Excel附件 + 趋势图公开下载链接）
+      # 10. 发送邮件（正文 + Excel附件 + 趋势图下载链接）
       - name: 发送分析报告邮件
         env:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
@@ -122,19 +136,26 @@ jobs:
           MAIL_SMTP_SERVER: ${{ secrets.MAIL_SMTP_SERVER }}
           MAIL_SMTP_PORT: ${{ secrets.MAIL_SMTP_PORT }}
         run: |
-          DOWNLOAD_URL="${{ steps.create_release.outputs.DOWNLOAD_URL }}"
+          RELEASE_URL="${{ steps.create_release.outputs.RELEASE_URL }}"
+          DIRECT_URL="${{ steps.create_release.outputs.DIRECT_URL }}"
+          RUN_ID="${{ github.run_id }}"
+          REPO="${{ github.repository }}"
+          ARTIFACT_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
           
-          if [ -n "$DOWNLOAD_URL" ]; then
-            echo "趋势图公开下载链接: $DOWNLOAD_URL"
+          if [ -n "$DIRECT_URL" ]; then
+            echo "趋势图公开下载链接: $DIRECT_URL"
             python send_email.py \
               --to "$MAIL_TO" \
               --body-file "宽基指数分析结果.txt" \
               --attach-excel "基金趋势分析.xlsx" \
-              --download-url "$DOWNLOAD_URL"
+              --download-url "$DIRECT_URL"
           else
-            echo "无趋势图下载链接，仅发送Excel附件"
+            echo "Release 创建失败，使用 Artifact 链接"
             python send_email.py \
               --to "$MAIL_TO" \
               --body-file "宽基指数分析结果.txt" \
-              --attach-excel "基金趋势分析.xlsx"
+              --attach-excel "基金趋势分析.xlsx" \
+              --download-url "$ARTIFACT_URL"
           fi
+
+
