@@ -12,6 +12,8 @@ jobs:
   analyze-and-send:
     name: 分析并发送报告
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 需要写入权限来创建 Release
 
     steps:
       # 1. 检出代码
@@ -36,19 +38,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y fonts-wqy-zenhei fonts-wqy-microhei
-          # 更新字体缓存
           sudo fc-cache -fv
-          # 彻底清除 matplotlib 字体缓存（所有可能的路径）
-          rm -rf ~/.cache/matplotlib
-          rm -rf ~/.matplotlib
-          rm -rf /home/runner/.cache/matplotlib
-          rm -rf /home/runner/.matplotlib
-          # 打印已安装的中文字体（用于调试）
+          rm -rf ~/.cache/matplotlib ~/.matplotlib /home/runner/.cache/matplotlib /home/runner/.matplotlib
           echo "=== 已安装的中文字体 ==="
           fc-list :lang=zh | head -20
       
       # 5. 运行宽基指数分析（EMA版本）
-      #    生成文本文件作为邮件正文
       - name: 运行宽基指数趋势分析
         id: run_ema
         continue-on-error: true
@@ -60,7 +55,6 @@ jobs:
           echo "宽基指数分析完成"
       
       # 6. 运行基金趋势分析（WMA版本）
-      #    生成 Excel 文件和趋势图
       - name: 运行基金趋势分析
         id: run_wma
         continue-on-error: true
@@ -71,7 +65,7 @@ jobs:
           python "基金趋势大模型_WMA.py"
           echo "基金趋势分析完成"
       
-      # 7. 列出生成的文件（用于调试）
+      # 7. 列出生成的文件
       - name: 列出生成的文件
         run: |
           echo "=== 当前目录文件 ==="
@@ -80,17 +74,46 @@ jobs:
           echo "=== 基金趋势图目录 ==="
           ls -d 基金趋势图_* 2>/dev/null && ls 基金趋势图_*/ 2>/dev/null || echo "（无趋势图目录）"
       
-      # 8. 上传趋势图到 Artifact（图片太大，不适合邮件附件）
-      - name: 上传趋势图到 Artifact
-        id: upload_artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: 基金趋势图_${{ github.run_id }}
-          path: |
-            基金趋势图_*/
-          retention-days: 7
+      # 8. 打包趋势图并上传到 GitHub Release（生成公开下载链接）
+      - name: 打包趋势图并创建 Release
+        id: create_release
+        run: |
+          TODAY=$(date +'%Y%m%d')
+          TAG_NAME="trend-charts-${TODAY}"
+          ZIP_NAME="基金趋势图_${TODAY}.zip"
+          
+          # 查找趋势图目录
+          IMAGES_DIR=$(ls -d 基金趋势图_* 2>/dev/null | sort -r | head -1 || echo "")
+          
+          if [ -n "$IMAGES_DIR" ]; then
+            echo "找到趋势图目录: $IMAGES_DIR"
+            
+            # 打包成 zip
+            zip -r "$ZIP_NAME" "$IMAGES_DIR"
+            echo "已打包: $ZIP_NAME"
+            
+            # 删除旧的同名 tag（如果存在）
+            gh release delete "$TAG_NAME" --yes 2>/dev/null || true
+            git tag -d "$TAG_NAME" 2>/dev/null || true
+            
+            # 创建 Release 并上传 zip
+            gh release create "$TAG_NAME" \
+              --title "基金趋势图 ${TODAY}" \
+              --notes "基金趋势分析图表 - ${TODAY}" \
+              "$ZIP_NAME"
+            
+            # 获取公开下载 URL
+            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
+            echo "DOWNLOAD_URL=${DOWNLOAD_URL}" >> $GITHUB_OUTPUT
+            echo "公开下载链接: ${DOWNLOAD_URL}"
+          else
+            echo "未找到趋势图目录，跳过 Release"
+            echo "DOWNLOAD_URL=" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
       
-      # 9. 发送邮件（正文 + Excel附件 + 趋势图下载链接）
+      # 9. 发送邮件（正文 + Excel附件 + 趋势图公开下载链接）
       - name: 发送分析报告邮件
         env:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
@@ -99,18 +122,19 @@ jobs:
           MAIL_SMTP_SERVER: ${{ secrets.MAIL_SMTP_SERVER }}
           MAIL_SMTP_PORT: ${{ secrets.MAIL_SMTP_PORT }}
         run: |
-          # 构造 Artifact 下载链接
-          REPO="${{ github.repository }}"
-          RUN_ID="${{ github.run_id }}"
-          ARTIFACT_NAME="基金趋势图_${{ github.run_id }}"
-          DOWNLOAD_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
+          DOWNLOAD_URL="${{ steps.create_release.outputs.DOWNLOAD_URL }}"
           
-          echo "趋势图下载链接: $DOWNLOAD_URL"
-          
-          python send_email.py \
-            --to "$MAIL_TO" \
-            --body-file "宽基指数分析结果.txt" \
-            --attach-excel "基金趋势分析.xlsx" \
-            --download-url "$DOWNLOAD_URL"
-
-
+          if [ -n "$DOWNLOAD_URL" ]; then
+            echo "趋势图公开下载链接: $DOWNLOAD_URL"
+            python send_email.py \
+              --to "$MAIL_TO" \
+              --body-file "宽基指数分析结果.txt" \
+              --attach-excel "基金趋势分析.xlsx" \
+              --download-url "$DOWNLOAD_URL"
+          else
+            echo "无趋势图下载链接，仅发送Excel附件"
+            python send_email.py \
+              --to "$MAIL_TO" \
+              --body-file "宽基指数分析结果.txt" \
+              --attach-excel "基金趋势分析.xlsx"
+          fi
