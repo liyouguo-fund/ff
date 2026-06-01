@@ -12,6 +12,8 @@ jobs:
   analyze-and-send:
     name: 分析并发送报告
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 需要写入权限来创建 Release
 
     steps:
       # 1. 检出代码
@@ -72,20 +74,46 @@ jobs:
           echo "=== 基金趋势图目录 ==="
           ls -d 基金趋势图_* 2>/dev/null && ls 基金趋势图_*/ 2>/dev/null || echo "（无趋势图目录）"
       
-      # 8. 上传生成的文件到 Artifact（只含项目产生的材料，不含代码文件）
-      - name: 上传生成的文件到 Artifact
-        id: upload_artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: 基金分析报告_${{ github.run_id }}
-          path: |
-            基金趋势图_*/*.png
-            基金趋势分析.xlsx
-          retention-days: 7
-
-
+      # 8. 打包生成的文件并上传到 Release（公开下载，无需登录）
+      - name: 打包并创建 Release
+        id: create_release
+        run: |
+          TODAY=$(date +'%Y%m%d')
+          TAG_NAME="trend-charts-${TODAY}"
+          ZIP_NAME="基金分析报告_${TODAY}.zip"
+          
+          # 查找趋势图目录
+          IMAGES_DIR=$(ls -d 基金趋势图_* 2>/dev/null | sort -r | head -1 || echo "")
+          
+          if [ -n "$IMAGES_DIR" ]; then
+            echo "找到趋势图目录: $IMAGES_DIR"
+            
+            # 打包趋势图和Excel
+            zip -r "$ZIP_NAME" "$IMAGES_DIR" 基金趋势分析.xlsx
+            echo "已打包: $ZIP_NAME"
+            
+            # 删除旧的同名 tag（如果存在）
+            gh release delete "$TAG_NAME" --yes 2>/dev/null || true
+            git tag -d "$TAG_NAME" 2>/dev/null || true
+            
+            # 创建 Release 并上传 zip
+            gh release create "$TAG_NAME" \
+              --title "基金分析报告 ${TODAY}" \
+              --notes "基金趋势分析报告 - ${TODAY}" \
+              "$ZIP_NAME"
+            
+            # 获取公开下载链接
+            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
+            echo "DOWNLOAD_URL=${DOWNLOAD_URL}" >> $GITHUB_OUTPUT
+            echo "公开下载链接: ${DOWNLOAD_URL}"
+          else
+            echo "未找到趋势图目录，跳过 Release"
+            echo "DOWNLOAD_URL=" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
       
-      # 9. 发送邮件（正文 + Excel附件 + 趋势图下载链接）
+      # 9. 发送邮件（正文 + Excel附件 + 公开下载链接）
       - name: 发送分析报告邮件
         env:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
@@ -94,14 +122,19 @@ jobs:
           MAIL_SMTP_SERVER: ${{ secrets.MAIL_SMTP_SERVER }}
           MAIL_SMTP_PORT: ${{ secrets.MAIL_SMTP_PORT }}
         run: |
-          REPO="${{ github.repository }}"
-          RUN_ID="${{ github.run_id }}"
-          DOWNLOAD_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
+          DOWNLOAD_URL="${{ steps.create_release.outputs.DOWNLOAD_URL }}"
           
-          echo "趋势图下载链接: $DOWNLOAD_URL"
-          
-          python send_email.py \
-            --to "$MAIL_TO" \
-            --body-file "宽基指数分析结果.txt" \
-            --attach-excel "基金趋势分析.xlsx" \
-            --download-url "$DOWNLOAD_URL"
+          if [ -n "$DOWNLOAD_URL" ]; then
+            echo "公开下载链接: $DOWNLOAD_URL"
+            python send_email.py \
+              --to "$MAIL_TO" \
+              --body-file "宽基指数分析结果.txt" \
+              --attach-excel "基金趋势分析.xlsx" \
+              --download-url "$DOWNLOAD_URL"
+          else
+            echo "Release 创建失败，仅发送Excel附件"
+            python send_email.py \
+              --to "$MAIL_TO" \
+              --body-file "宽基指数分析结果.txt" \
+              --attach-excel "基金趋势分析.xlsx"
+          fi
