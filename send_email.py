@@ -3,14 +3,15 @@
 
 功能：
 1. 读取"宽基指数趋势大模型_EMA.py"生成的文本文件作为邮件正文
-2. 将"基金趋势大模型_WMA.py"生成的 Excel 文件和图片打包成 zip 作为附件
-3. 通过 SMTP 发送邮件（默认 QQ邮箱）
+2. 将"基金趋势大模型_WMA.py"生成的 Excel 文件作为附件
+3. 在正文末尾添加趋势图下载链接（图片太大，通过 Artifact 下载）
+4. 通过 SMTP 发送邮件（默认 QQ邮箱）
 
 使用方式：
     python send_email.py --to recipient@qq.com \\
         --body-file 宽基指数分析结果.txt \\
         --attach-excel 基金趋势分析.xlsx \\
-        --attach-images-dir 基金趋势图_20250101
+        --download-url "https://github.com/.../actions/runs/..."
 
 环境变量（GitHub Secrets）：
     MAIL_USERNAME:   邮箱地址（必填）
@@ -24,39 +25,12 @@
 import smtplib
 import os
 import sys
-import zipfile
 import argparse
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from datetime import datetime
-
-
-def create_zip_attachment(file_paths: list, zip_name: str = "附件.zip") -> str:
-    """
-    将多个文件打包成 zip 文件
-    
-    Args:
-        file_paths: 要打包的文件路径列表
-        zip_name: 生成的 zip 文件名
-    
-    Returns:
-        str: 生成的 zip 文件路径
-    """
-    zip_path = os.path.join(os.path.dirname(file_paths[0]) if file_paths else '.', zip_name)
-    
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for file_path in file_paths:
-            if os.path.exists(file_path):
-                # 将文件添加到 zip 中，使用文件名（不含路径）
-                arcname = os.path.basename(file_path)
-                zf.write(file_path, arcname)
-                print(f"  已添加至zip: {arcname}")
-            else:
-                print(f"  警告: 文件不存在 - {file_path}")
-    
-    return zip_path
 
 
 def send_email(to_addr: str, subject: str, body_text: str, 
@@ -124,7 +98,7 @@ def send_email(to_addr: str, subject: str, body_text: str,
     """
     msg.attach(MIMEText(html_content, 'html', 'utf-8'))
     
-    # 添加附件
+    # 添加附件（仅限小文件，如Excel）
     if attachment_paths:
         for file_path in attachment_paths:
             if os.path.exists(file_path):
@@ -169,8 +143,8 @@ def main():
                         help='邮件正文文本文件路径')
     parser.add_argument('--attach-excel', default='基金趋势分析.xlsx',
                         help='要附加的Excel文件路径')
-    parser.add_argument('--attach-images-dir', default=None,
-                        help='要附加的图片目录路径（目录下的所有png文件将被打包成zip）')
+    parser.add_argument('--download-url', default=None,
+                        help='趋势图下载链接（GitHub Artifact URL，会追加到正文末尾）')
     parser.add_argument('--output-dir', default='.',
                         help='输出文件所在目录')
     
@@ -196,10 +170,25 @@ def main():
         print(f"警告: 正文文件不存在 - {body_file}，将使用默认正文")
         body_text = f"宽基指数趋势分析报告\n日期: {datetime.now().strftime('%Y-%m-%d')}\n\n（分析结果文件未生成）"
     
-    # 2. 准备附件
+    # 2. 在正文末尾添加趋势图下载链接
+    if args.download_url:
+        body_text += f"""
+═══════════════════════════════════════════
+📊 基金趋势图下载
+═══════════════════════════════════════════
+趋势图文件较大，已上传至 GitHub Artifact，
+请点击下方链接下载（需登录 GitHub 账号）：
+
+{args.download_url}
+
+下载后解压即可查看各基金的趋势分析图表。
+═══════════════════════════════════════════
+"""
+        print(f"已添加趋势图下载链接: {args.download_url}")
+    
+    # 3. 准备附件（仅Excel，不包含图片）
     attachment_paths = []
     
-    # 添加Excel文件
     excel_path = os.path.join(output_dir, args.attach_excel)
     if os.path.exists(excel_path):
         attachment_paths.append(excel_path)
@@ -207,22 +196,7 @@ def main():
     else:
         print(f"警告: Excel文件不存在 - {excel_path}")
     
-    # 添加图片目录（打包成zip）
-    if args.attach_images_dir:
-        images_dir = os.path.join(output_dir, args.attach_images_dir)
-        if os.path.isdir(images_dir):
-            png_files = [os.path.join(images_dir, f) for f in os.listdir(images_dir) 
-                        if f.endswith('.png')]
-            if png_files:
-                zip_path = create_zip_attachment(png_files, "基金趋势图.zip")
-                attachment_paths.append(zip_path)
-                print(f"已创建图片zip包: {zip_path} ({len(png_files)}张图片)")
-            else:
-                print(f"警告: 目录 {images_dir} 中没有PNG图片")
-        else:
-            print(f"警告: 图片目录不存在 - {images_dir}")
-    
-    # 3. 发送邮件
+    # 4. 发送邮件
     today = datetime.now().strftime('%Y-%m-%d')
     subject = f'【基金趋势分析报告】{today}'
     

@@ -80,7 +80,17 @@ jobs:
           echo "=== 基金趋势图目录 ==="
           ls -d 基金趋势图_* 2>/dev/null && ls 基金趋势图_*/ 2>/dev/null || echo "（无趋势图目录）"
       
-      # 8. 发送邮件
+      # 8. 上传趋势图到 Artifact（图片太大，不适合邮件附件）
+      - name: 上传趋势图到 Artifact
+        id: upload_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 基金趋势图_${{ github.run_id }}
+          path: |
+            基金趋势图_*/
+          retention-days: 7
+      
+      # 9. 发送邮件（正文 + Excel附件 + 趋势图下载链接）
       - name: 发送分析报告邮件
         env:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
@@ -89,32 +99,18 @@ jobs:
           MAIL_SMTP_SERVER: ${{ secrets.MAIL_SMTP_SERVER }}
           MAIL_SMTP_PORT: ${{ secrets.MAIL_SMTP_PORT }}
         run: |
-          # 查找最新生成的趋势图目录
-          IMAGES_DIR=$(ls -d 基金趋势图_* 2>/dev/null | sort -r | head -1 || echo "")
+          # 构造 Artifact 下载链接
+          REPO="${{ github.repository }}"
+          RUN_ID="${{ github.run_id }}"
+          ARTIFACT_NAME="基金趋势图_${{ github.run_id }}"
+          DOWNLOAD_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
           
-          if [ -n "$IMAGES_DIR" ]; then
-            echo "找到趋势图目录: $IMAGES_DIR"
-            python send_email.py \
-              --to "$MAIL_TO" \
-              --body-file "宽基指数分析结果.txt" \
-              --attach-excel "基金趋势分析.xlsx" \
-              --attach-images-dir "$IMAGES_DIR"
-          else
-            echo "未找到趋势图目录，仅发送Excel附件"
-            python send_email.py \
-              --to "$MAIL_TO" \
-              --body-file "宽基指数分析结果.txt" \
-              --attach-excel "基金趋势分析.xlsx"
-          fi
-      
-      # 9. 上传生成的文件作为 Artifact（方便调试）
-      - name: 上传生成的文件
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: 分析报告文件_${{ github.run_id }}
-          path: |
-            宽基指数分析结果.txt
-            基金趋势分析.xlsx
-            基金趋势图_*/
-          retention-days: 7
+          echo "趋势图下载链接: $DOWNLOAD_URL"
+          
+          python send_email.py \
+            --to "$MAIL_TO" \
+            --body-file "宽基指数分析结果.txt" \
+            --attach-excel "基金趋势分析.xlsx" \
+            --download-url "$DOWNLOAD_URL"
+
+
