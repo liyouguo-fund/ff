@@ -12,8 +12,6 @@ jobs:
   analyze-and-send:
     name: 分析并发送报告
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # 需要写入权限来创建 Release
 
     steps:
       # 1. 检出代码
@@ -74,7 +72,7 @@ jobs:
           echo "=== 基金趋势图目录 ==="
           ls -d 基金趋势图_* 2>/dev/null && ls 基金趋势图_*/ 2>/dev/null || echo "（无趋势图目录）"
       
-      # 8. 上传趋势图到 Artifact（备用下载方式）
+      # 8. 上传趋势图到 Artifact（图片太大，不适合邮件附件）
       - name: 上传趋势图到 Artifact
         id: upload_artifact
         uses: actions/upload-artifact@v4
@@ -84,50 +82,7 @@ jobs:
             基金趋势图_*/
           retention-days: 7
       
-      # 9. 打包趋势图并上传到 GitHub Release（生成公开下载链接，无需登录）
-      - name: 打包趋势图并创建 Release
-        id: create_release
-        run: |
-          TODAY=$(date +'%Y%m%d')
-          TAG_NAME="trend-charts-${TODAY}"
-          ZIP_NAME="基金趋势图_${TODAY}.zip"
-          
-          # 查找趋势图目录
-          IMAGES_DIR=$(ls -d 基金趋势图_* 2>/dev/null | sort -r | head -1 || echo "")
-          
-          if [ -n "$IMAGES_DIR" ]; then
-            echo "找到趋势图目录: $IMAGES_DIR"
-            
-            # 打包成 zip
-            zip -r "$ZIP_NAME" "$IMAGES_DIR"
-            echo "已打包: $ZIP_NAME"
-            
-            # 删除旧的同名 tag（如果存在）
-            gh release delete "$TAG_NAME" --yes 2>/dev/null || true
-            git tag -d "$TAG_NAME" 2>/dev/null || true
-            
-            # 创建 Release 并上传 zip
-            gh release create "$TAG_NAME" \
-              --title "基金趋势图 ${TODAY}" \
-              --notes "基金趋势分析图表 - ${TODAY}" \
-              "$ZIP_NAME"
-            
-            # 获取公开下载 URL（Release 页面）
-            RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
-            # 获取直接下载 URL（无需登录）
-            DIRECT_URL="https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/${ZIP_NAME}"
-            echo "RELEASE_URL=${RELEASE_URL}" >> $GITHUB_OUTPUT
-            echo "DIRECT_URL=${DIRECT_URL}" >> $GITHUB_OUTPUT
-            echo "公开下载链接: ${DIRECT_URL}"
-          else
-            echo "未找到趋势图目录，跳过 Release"
-            echo "RELEASE_URL=" >> $GITHUB_OUTPUT
-            echo "DIRECT_URL=" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-      
-      # 10. 发送邮件（正文 + Excel附件 + 趋势图下载链接）
+      # 9. 发送邮件（正文 + Excel附件 + 趋势图下载链接）
       - name: 发送分析报告邮件
         env:
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
@@ -136,26 +91,14 @@ jobs:
           MAIL_SMTP_SERVER: ${{ secrets.MAIL_SMTP_SERVER }}
           MAIL_SMTP_PORT: ${{ secrets.MAIL_SMTP_PORT }}
         run: |
-          RELEASE_URL="${{ steps.create_release.outputs.RELEASE_URL }}"
-          DIRECT_URL="${{ steps.create_release.outputs.DIRECT_URL }}"
-          RUN_ID="${{ github.run_id }}"
           REPO="${{ github.repository }}"
-          ARTIFACT_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
+          RUN_ID="${{ github.run_id }}"
+          DOWNLOAD_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
           
-          if [ -n "$DIRECT_URL" ]; then
-            echo "趋势图公开下载链接: $DIRECT_URL"
-            python send_email.py \
-              --to "$MAIL_TO" \
-              --body-file "宽基指数分析结果.txt" \
-              --attach-excel "基金趋势分析.xlsx" \
-              --download-url "$DIRECT_URL"
-          else
-            echo "Release 创建失败，使用 Artifact 链接"
-            python send_email.py \
-              --to "$MAIL_TO" \
-              --body-file "宽基指数分析结果.txt" \
-              --attach-excel "基金趋势分析.xlsx" \
-              --download-url "$ARTIFACT_URL"
-          fi
-
-
+          echo "趋势图下载链接: $DOWNLOAD_URL"
+          
+          python send_email.py \
+            --to "$MAIL_TO" \
+            --body-file "宽基指数分析结果.txt" \
+            --attach-excel "基金趋势分析.xlsx" \
+            --download-url "$DOWNLOAD_URL"
