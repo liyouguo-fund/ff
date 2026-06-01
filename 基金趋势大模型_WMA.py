@@ -177,7 +177,7 @@ def calculate_wma(data, period=20):
         其中 P1 是最新数据，P3 是最早数据
     """
     # 创建权重数组 [period, period-1, ..., 1]
-    weights = np.arange(period, 0, -1)
+    weights = np.arange(1, period+1)
     
     def weighted_avg(x):
         """滚动窗口内的加权平均计算"""
